@@ -1,5 +1,5 @@
 # generated: 2026-05-15T17:50:29+05:00
-# last_updated: 2026-05-15T19:30:00+05:00
+# last_updated: 2026-05-15T21:15:00+05:00
 # project: facial recognition - uzc
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,18 +35,18 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-15T17:50:29+05:00
-last_updated: 2026-05-15T19:30:00+05:00
+last_updated: 2026-05-15T21:15:00+05:00
 project: facial recognition - uzc
 project_key: NOKEY
 tracking_system: file-system
 story_location: C:\Users\sanja\facial recognition - uzc\_bmad-output\implementation-artifacts
 
 development_status:
-  epic-1: in-progress
+  epic-1: done
   1-1-verify-dlib-face-recognition-install-on-windows-demo-machine: done
   1-2-initialize-project-repository-structure: done
-  1-3-render-fullscreen-looping-promo-video-player: backlog
-  1-4-validate-fade-in-out-greeting-overlay-over-promo-video: backlog
+  1-3-render-fullscreen-looping-promo-video-player: done
+  1-4-validate-fade-in-out-greeting-overlay-over-promo-video: done
   epic-1-retrospective: optional
   epic-2: backlog
   2-1-build-single-frame-face-recognition-utility: backlog
