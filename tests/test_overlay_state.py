@@ -22,9 +22,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QImage, QPainter
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
-from player.overlay import GreetingOverlay, clamp_hold_ms, split_greeting_text
+from player.overlay import AvatarLabel, GreetingOverlay, clamp_hold_ms, split_greeting_text
 
 
 def _get_app() -> QApplication:
@@ -71,6 +72,12 @@ class TestGreetingOverlayState(unittest.TestCase):
         if first_group is not second_group:
             self.assertEqual(first_group.state().value, 0)  # 0 == Stopped
 
+    def test_many_retriggers_do_not_crash_or_leave_old_text(self) -> None:
+        for index in range(50):
+            self.overlay.start_fade(f"PERSON {index}")
+            self.app.processEvents()
+        self.assertEqual(self.overlay.label.text(), "PERSON 49")
+
     def test_widget_hides_after_full_cycle(self) -> None:
         # 50ms fade + 4000ms hold + 50ms fade = 4100ms; wait a little extra.
         self.overlay.start_fade("BYE")
@@ -88,6 +95,25 @@ class TestGreetingOverlayState(unittest.TestCase):
             split_greeting_text("Good morning, Alice! - nice scarf today"),
             ("Good morning, Alice!", "nice scarf today"),
         )
+
+
+class TestAvatarLabelPaint(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = _get_app()
+
+    def test_avatar_paints_without_pyqt_type_error(self) -> None:
+        avatar = AvatarLabel()
+        avatar.set_initial("A")
+        image = QImage(avatar.size(), QImage.Format.Format_ARGB32)
+        image.fill(0)
+        painter = QPainter(image)
+        try:
+            avatar.render(painter)
+        finally:
+            painter.end()
+            avatar.deleteLater()
+        self.app.processEvents()
 
 
 if __name__ == "__main__":

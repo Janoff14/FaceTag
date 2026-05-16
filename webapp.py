@@ -74,6 +74,7 @@ def create_app(config: dict | None = None) -> Flask:
         if str(email).strip()
     }
     app.config["CAMERA_DEVICE_INDEX"] = int(cfg.get("camera_device_index", 0))
+    app.config["CAMERA_BACKEND"] = str(cfg.get("camera_backend", "dshow") or "dshow")
 
     def auth_enabled() -> bool:
         return bool(
@@ -249,6 +250,7 @@ def create_app(config: dict | None = None) -> Flask:
                 frame_path = capture_frame_to_file(
                     app.config["CAMERA_DEVICE_INDEX"],
                     Path(tmp) / "capture.jpg",
+                    backend=app.config["CAMERA_BACKEND"],
                 )
                 add_person(
                     name,

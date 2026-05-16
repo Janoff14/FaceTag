@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
 import multiprocessing
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from player.main import run_player
 from supervisor import (
     COMPONENT_LOGS,
     ComponentSupervisor,
@@ -86,19 +85,12 @@ def main(argv: list[str] | None = None) -> int:
         debug_camera_queue=debug_camera_queue,
     )
 
-    player_log_path = log_dir / "player.log"
     exit_code = 0
     try:
         component_supervisor.start()
-        with player_log_path.open("a", encoding="utf-8", buffering=1) as player_log, \
-             contextlib.redirect_stdout(player_log), \
-             contextlib.redirect_stderr(player_log):
-            print("PLAYER_STARTING", flush=True)
-            exit_code = run_player(
-                config,
-                greeting_queue=greeting_queue,
-                debug_camera_queue=debug_camera_queue,
-            )
+        while component_supervisor.requested_exit_code is None:
+            time.sleep(0.2)
+        exit_code = component_supervisor.requested_exit_code
     except KeyboardInterrupt:
         append_supervisor_log(log_dir, "KeyboardInterrupt received; shutting down")
         exit_code = 130

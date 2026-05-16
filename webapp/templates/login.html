@@ -2,100 +2,35 @@
 {% block body_class %}auth-shell{% endblock %}
 
 {% block layout %}
-<div class="bg-orbs" aria-hidden="true">
-  <span class="orb orb-a"></span>
-  <span class="orb orb-b"></span>
-  <span class="orb orb-c"></span>
-</div>
-
-<div class="auth-split">
-  <aside class="auth-hero">
-    <div class="auth-hero-inner">
-      <div class="brand">
-        <div class="brand-mark">
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path d="M4 8V6a2 2 0 0 1 2-2h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M16 4h2a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M20 16v2a2 2 0 0 1-2 2h-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <path d="M8 20H6a2 2 0 0 1-2-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <circle cx="9" cy="11" r="1.2" fill="currentColor"/>
-            <circle cx="15" cy="11" r="1.2" fill="currentColor"/>
-            <path d="M9 15c1 1 2 1.4 3 1.4S13.8 16 15 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-          </svg>
-        </div>
-        <div class="brand-meta">
-          <h1>FaceTag</h1>
-          <span class="subtitle">Kiosk admin</span>
-        </div>
+<main class="auth-wrap">
+  <section class="card auth-card">
+    <div class="auth-head">
+      <div class="brand-mark large">FT</div>
+      <div>
+        <h1>FaceTag Admin</h1>
+        <p>Sign in to manage people and promo videos.</p>
       </div>
-
-      <h2 class="auth-headline">Welcome back.<br>Manage the kiosk.</h2>
-      <p class="auth-lede">
-        Add new people, refresh the promo playlist, and tune greeting copy.
-        All data stays on this device — nothing leaves the network.
-      </p>
-
-      <ul class="auth-bullets">
-        <li>
-          <span class="bullet-dot"></span>
-          Face embeddings never leave the machine
-        </li>
-        <li>
-          <span class="bullet-dot"></span>
-          Greetings in English, Uzbek &amp; Russian
-        </li>
-        <li>
-          <span class="bullet-dot"></span>
-          Bound to <code>127.0.0.1</code> only
-        </li>
-      </ul>
-
-      <div class="auth-footer">FaceTag · Local · Private</div>
     </div>
-  </aside>
 
-  <main class="auth-main">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        <div class="flashes">
-          {% for category, message in messages %}
-            <div class="flash {{ category }}">
-              <span class="flash-icon">
-                {% if category == 'success' %}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4 4 10-10"/></svg>
-                {% else %}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
-                {% endif %}
-              </span>
-              <span>{{ message }}</span>
-            </div>
-          {% endfor %}
-        </div>
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
       {% endif %}
     {% endwith %}
 
-    <section class="auth-card">
-      <header class="auth-card-head">
-        <h2>Sign in</h2>
-        <p>Enter your admin credentials to continue.</p>
-      </header>
-
-      <form class="add auth-form" method="post">
-        <div class="field">
-          <label for="username">Username or email</label>
-          <input id="username" type="text" name="username" autocomplete="username" required>
-        </div>
-        <div class="field">
-          <label for="password">Password</label>
-          <input id="password" type="password" name="password" autocomplete="current-password" required>
-        </div>
-        <button type="submit" class="primary block">Log in</button>
-      </form>
-
-      <p class="auth-hint">
-        Credentials are configured in <code>config.yaml</code> on this machine.
-      </p>
-    </section>
-  </main>
-</div>
+    <form class="add auth-form" method="post">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" type="text" name="username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="primary">Log in</button>
+    </form>
+  </section>
+</main>
 {% endblock %}

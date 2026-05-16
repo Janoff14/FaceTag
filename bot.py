@@ -154,6 +154,18 @@ def _videos_menu_markup() -> InlineKeyboardMarkup:
     ])
 
 
+def _user_menu_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Start registration", callback_data="user:join")],
+    ])
+
+
+def _user_cancel_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Cancel request", callback_data="user:cancel")],
+    ])
+
+
 def _delete_people_markup(names: list[str]) -> InlineKeyboardMarkup:
     rows = [[InlineKeyboardButton(f"🗑 {name}", callback_data=f"delete_person:{name}")] for name in names[:20]]
     rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu:people")])
@@ -248,7 +260,10 @@ async def start_command(update: Any, context: Any) -> None:
     if _is_authorized(update, context):
         await message.reply_text("Welcome admin", reply_markup=_main_menu_markup())
     else:
-        await message.reply_text("Welcome. Use /join to send your name and photo for admin approval.")
+        await message.reply_text(
+            "Welcome. Tap the button to send your name and photo for admin approval.",
+            reply_markup=_user_menu_markup(),
+        )
 
 
 def _pending_add_person(context: Any) -> dict:
@@ -322,7 +337,10 @@ async def self_register_command(update: Any, context: Any) -> None:
         _pending_self_submit(context)[chat_id] = {"step": "name"}
         log_bot_event(f"SELF_REGISTER_START chat_id={chat_id}")
     if message is not None:
-        await message.reply_text("Send your name, then a clear front-facing photo.")
+        await message.reply_text(
+            "Send your name, then a clear front-facing photo.",
+            reply_markup=_user_cancel_markup(),
+        )
 
 
 async def add_person_command(update: Any, context: Any) -> None:
@@ -354,7 +372,10 @@ async def handle_text_message(update: Any, context: Any) -> None:
             return
         if state.get("step") == "photo":
             if message is not None:
-                await message.reply_text("Send a clear front-facing photo.")
+                await message.reply_text(
+                    "Send a clear front-facing photo.",
+                    reply_markup=_user_cancel_markup(),
+                )
             return
         name = (getattr(message, "text", "") or "").strip()
         if not name:
@@ -364,7 +385,10 @@ async def handle_text_message(update: Any, context: Any) -> None:
         _pending_self_submit(context)[chat_id] = {"step": "photo", "name": name}
         log_bot_event(f"SELF_REGISTER_NAME chat_id={chat_id} name={name!r}")
         if message is not None:
-            await message.reply_text("Send a clear front-facing photo.")
+            await message.reply_text(
+                "Send a clear front-facing photo.",
+                reply_markup=_user_cancel_markup(),
+            )
         return
     chat_id = _chat_id(update)
     pending = _pending_add_person(context)
@@ -710,6 +734,42 @@ async def handle_menu_callback(update: Any, context: Any) -> None:
     if query is None:
         return
     chat_id = _chat_id(update)
+    data = (getattr(query, "data", "") or "").strip()
+
+    if data == "user:join":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        registered_name = _registered_name_for_chat_id(context, chat_id)
+        if registered_name:
+            await query.edit_message_text(
+                f"You are already registered as {registered_name}. Ask an admin to delete you before registering again.",
+                reply_markup=_user_menu_markup(),
+            )
+            return
+        if chat_id is not None:
+            _pending_self_submit(context)[chat_id] = {"step": "name"}
+            log_bot_event(f"SELF_REGISTER_START chat_id={chat_id}")
+        await query.edit_message_text(
+            "Send your name, then a clear front-facing photo.",
+            reply_markup=_user_cancel_markup(),
+        )
+        return
+
+    if data == "user:cancel":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        if chat_id is not None:
+            _pending_self_submit(context).pop(chat_id, None)
+        await query.edit_message_text(
+            "Registration cancelled. Tap Start registration when you are ready.",
+            reply_markup=_user_menu_markup(),
+        )
+        return
+
     admin_ids = context.bot_data.get("admin_chat_ids", set())
     if chat_id not in admin_ids:
         log_unauthorized(chat_id, getattr(query, "data", "<callback>"))
@@ -719,7 +779,6 @@ async def handle_menu_callback(update: Any, context: Any) -> None:
             pass
         return
 
-    data = (getattr(query, "data", "") or "").strip()
     try:
         await query.answer()
     except Exception:

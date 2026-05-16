@@ -41,6 +41,16 @@ class CameraCaptureTests(unittest.TestCase):
             imwrite.assert_called_once()
             self.assertTrue(fake.released)
 
+    def test_uses_directshow_backend_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = _FakeCapture()
+            with mock.patch("recognition.camera_capture.cv2.VideoCapture", return_value=fake) as video_capture, \
+                 mock.patch("recognition.camera_capture.cv2.imwrite", return_value=True):
+                capture_frame_to_file(1, Path(tmp) / "capture.jpg", warmup_frames=1)
+
+            self.assertEqual(video_capture.call_args.args[0], 1)
+            self.assertEqual(video_capture.call_args.args[1], 700)  # cv2.CAP_DSHOW
+
     def test_unavailable_camera_raises_and_releases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fake = _FakeCapture(opened=False)

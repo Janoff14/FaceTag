@@ -25,6 +25,7 @@ from __future__ import annotations
 import queue
 import sys
 import time
+import multiprocessing
 from pathlib import Path
 from typing import Optional
 
@@ -42,6 +43,32 @@ MAX_DRAIN_GRABS = 5
 DEFAULT_COOLDOWN_SECONDS = 60.0
 DEBUG_FRAME_INTERVAL_S = 0.2
 DEBUG_FRAME_WIDTH = 320
+CAMERA_REOPEN_AFTER_EMPTY_FRAMES = 120
+
+
+def _camera_backend_flag(config: dict) -> int | None:
+    """Return an optional cv2 VideoCapture backend flag."""
+    backend = str(config.get("camera_backend", "dshow")).strip().lower()
+    if backend in {"", "auto", "default"}:
+        return None
+    if backend in {"dshow", "directshow"}:
+        return cv2.CAP_DSHOW
+    if backend == "msmf":
+        return cv2.CAP_MSMF
+    return None
+
+
+def _open_camera(camera_index: int, config: dict):
+    backend = _camera_backend_flag(config)
+    if backend is None:
+        cap = cv2.VideoCapture(camera_index)
+    else:
+        cap = cv2.VideoCapture(camera_index, backend)
+    try:
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    except Exception:
+        pass
+    return cap
 
 
 def _read_latest_frame(cap) -> Optional[np.ndarray]:
@@ -110,6 +137,25 @@ def _try_put_debug_event(debug_camera_queue, frame: np.ndarray, lines: list[str]
         pass
 
 
+def _try_put_greeting_event(greeting_queue, event: dict) -> bool:
+    """Queue the newest greeting, dropping one stale event if needed."""
+    if greeting_queue is None:
+        return False
+    try:
+        greeting_queue.put_nowait(event)
+        return True
+    except queue.Full:
+        try:
+            greeting_queue.get_nowait()
+        except queue.Empty:
+            return False
+        try:
+            greeting_queue.put_nowait(event)
+            return True
+        except queue.Full:
+            return False
+
+
 def _debug_recognition_lines(frame: np.ndarray, registry, tolerance: float) -> list[str]:
     """Return lightweight match diagnostics for the temporary camera overlay."""
     if registry.encodings.shape[0] == 0:
@@ -161,8 +207,9 @@ def run(
     tolerance = float(config.get("recognition_tolerance", 0.5))
     cooldown_seconds = float(config.get("cooldown_seconds", DEFAULT_COOLDOWN_SECONDS))
     people_db_path = Path(config.get("people_db_path", "people.json"))
+    parent_process = multiprocessing.parent_process()
 
-    cap = cv2.VideoCapture(camera_index)
+    cap = _open_camera(camera_index, config)
     if not cap.isOpened():
         print(f"ERROR: cannot open camera index {camera_index}", file=sys.stderr)
         cap.release()
@@ -178,12 +225,15 @@ def run(
 
     last_greeted_at: dict[str, float] = {}
     last_debug_frame_at = 0.0
+    empty_frame_count = 0
 
     reloader = PeopleRegistryReloader(people_db_path)
     reloader.start()
 
     try:
         while True:
+            if parent_process is not None and not parent_process.is_alive():
+                return 0
             if stop_event is not None and stop_event.is_set():
                 return 0
             if reloader.reload_pending:
@@ -199,8 +249,16 @@ def run(
                     )
             frame = _read_latest_frame(cap)
             if frame is None:
+                empty_frame_count += 1
+                if empty_frame_count >= CAMERA_REOPEN_AFTER_EMPTY_FRAMES:
+                    print("CAMERA_REOPEN after repeated empty frames", file=sys.stderr, flush=True)
+                    cap.release()
+                    time.sleep(0.25)
+                    cap = _open_camera(camera_index, config)
+                    empty_frame_count = 0
                 time.sleep(LOOP_SLEEP_ON_EMPTY_S)
                 continue
+            empty_frame_count = 0
             name = recognize_dual(frame, registry, tolerance)
             now = time.time()
             lines = [
@@ -247,20 +305,20 @@ def run(
                             custom_message = registry.custom_messages[idx]
                     except (ValueError, AttributeError):
                         flavors = []
-                    greeting_queue.put_nowait(
-                        {
-                            "name": name,
-                            "timestamp": now,
-                            "flavors": flavors,
-                            "language": language,
-                            "birthday": birthday,
-                            "custom_message": custom_message,
-                        }
-                    )
-                    lines.append("greeting: emitted")
-                except queue.Full:
-                    lines.append("greeting: dropped; queue full")
-                    pass  # Drop the event rather than block the worker.
+                    event = {
+                        "name": name,
+                        "timestamp": now,
+                        "flavors": flavors,
+                        "language": language,
+                        "birthday": birthday,
+                        "custom_message": custom_message,
+                    }
+                    if _try_put_greeting_event(greeting_queue, event):
+                        lines.append("greeting: emitted")
+                    else:
+                        lines.append("greeting: dropped; queue full")
+                except Exception as exc:
+                    lines.append(f"greeting: failed {type(exc).__name__}")
             else:
                 lines.append("greeting: no queue")
             if should_send_debug:

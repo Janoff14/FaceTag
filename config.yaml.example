@@ -5,6 +5,8 @@ telegram_token: "PASTE_BOT_TOKEN_HERE"
 admin_chat_ids: []
 
 camera_device_index: 0
+# Windows demo default: DirectShow is usually more reliable than MSMF.
+camera_backend: "dshow"
 
 recognition_tolerance: 0.5
 cooldown_seconds: 60
@@ -36,7 +38,7 @@ web_allowed_emails: []
 web_username: ""
 web_password: ""
 
-# Temporary local testing overlay. Set false before final demo/submission.
+# Camera preview panel on the kiosk. Useful for demo; set false for unattended installs.
 debug_camera_overlay: true
 
 # Optional: holiday → headline map. Date keys are MM-DD (no year). Empty by default.

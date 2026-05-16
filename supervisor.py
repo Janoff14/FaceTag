@@ -18,12 +18,18 @@ BOT_JOIN_TIMEOUT_S = 5
 MONITOR_INTERVAL_S = 1
 COMPONENT_LOGS = ("player", "worker", "bot", "webapp", "supervisor")
 WEBAPP_JOIN_TIMEOUT_S = 5
+PLAYER_JOIN_TIMEOUT_S = 5
 
 
 @dataclass
 class WorkerHandle:
     process: multiprocessing.Process
     stop_event: Any
+
+
+@dataclass
+class PlayerHandle:
+    process: multiprocessing.Process
 
 
 @dataclass
@@ -85,6 +91,55 @@ def start_recognition_worker(
     process.start()
     append_supervisor_log(log_dir, f"Started worker pid={process.pid}")
     return WorkerHandle(process=process, stop_event=stop_event)
+
+
+def _player_entrypoint(
+    config: dict[str, Any],
+    greeting_queue,
+    debug_camera_queue,
+    log_path: str,
+) -> int:
+    from player.main import run_player
+
+    path = Path(log_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", buffering=1) as handle, \
+         contextlib.redirect_stdout(handle), \
+         contextlib.redirect_stderr(handle):
+        print("PLAYER_STARTING", flush=True)
+        return run_player(
+            config,
+            greeting_queue=greeting_queue,
+            debug_camera_queue=debug_camera_queue,
+        )
+
+
+def start_player_process(
+    config: dict[str, Any],
+    greeting_queue,
+    debug_camera_queue=None,
+    log_dir: Path | None = None,
+) -> PlayerHandle:
+    log_dir = log_dir or _log_dir(config)
+    process = multiprocessing.Process(
+        target=_player_entrypoint,
+        args=(config, greeting_queue, debug_camera_queue, str(log_dir / "player.log")),
+        name="kiosk-player",
+    )
+    process.start()
+    append_supervisor_log(log_dir, f"Started player pid={process.pid}")
+    return PlayerHandle(process=process)
+
+
+def stop_player_process(handle: PlayerHandle | None) -> None:
+    if handle is None:
+        return
+    if handle.process.is_alive():
+        handle.process.terminate()
+        handle.process.join(timeout=PLAYER_JOIN_TIMEOUT_S)
+    if handle.process.is_alive():
+        handle.process.kill()
+        handle.process.join(timeout=PLAYER_JOIN_TIMEOUT_S)
 
 
 def stop_recognition_worker(handle: WorkerHandle | None) -> None:
@@ -213,16 +268,24 @@ class ComponentSupervisor:
         self.greeting_queue = greeting_queue
         self.debug_camera_queue = debug_camera_queue
         self.log_dir = _log_dir(config)
+        self.player: PlayerHandle | None = None
         self.worker: WorkerHandle | None = None
         self.bot: BotHandle | None = None
         self.webapp: WebappHandle | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._start_monitor_thread = start_monitor_thread
+        self.requested_exit_code: int | None = None
 
     def start(self) -> None:
         append_supervisor_log(self.log_dir, "Supervisor starting")
         self.worker = start_recognition_worker(
+            self.config,
+            self.greeting_queue,
+            self.debug_camera_queue,
+            log_dir=self.log_dir,
+        )
+        self.player = start_player_process(
             self.config,
             self.greeting_queue,
             self.debug_camera_queue,
@@ -235,22 +298,38 @@ class ComponentSupervisor:
             self._thread.start()
 
     def tick(self) -> None:
+        if self.player is not None and self.player.process.exitcode is not None:
+            exitcode = self.player.process.exitcode
+            if exitcode == 0:
+                append_supervisor_log(self.log_dir, "Player exited cleanly; shutting down")
+                self.requested_exit_code = 0
+                self._stop.set()
+                return
+            append_supervisor_log(self.log_dir, f"Restarting player after exit code {exitcode}")
+            old_player = self.player
+            stop_player_process(old_player)
+            self.player = start_player_process(
+                self.config,
+                self.greeting_queue,
+                self.debug_camera_queue,
+                log_dir=self.log_dir,
+            )
+
         if self.worker is not None and self.worker.process.exitcode is not None:
             exitcode = self.worker.process.exitcode
-            if exitcode != 0:
-                append_supervisor_log(self.log_dir, f"Restarting worker after exit code {exitcode}")
-                old_worker = self.worker
-                stop_recognition_worker(old_worker)
-                self.worker = start_recognition_worker(
-                    self.config,
-                    self.greeting_queue,
-                    self.debug_camera_queue,
-                    log_dir=self.log_dir,
-                )
+            append_supervisor_log(self.log_dir, f"Restarting worker after exit code {exitcode}")
+            old_worker = self.worker
+            stop_recognition_worker(old_worker)
+            self.worker = start_recognition_worker(
+                self.config,
+                self.greeting_queue,
+                self.debug_camera_queue,
+                log_dir=self.log_dir,
+            )
 
         if self.bot is not None:
             returncode = self.bot.process.poll()
-            if returncode is not None and returncode != 0:
+            if returncode is not None:
                 append_supervisor_log(self.log_dir, f"Restarting bot after exit code {returncode}")
                 old_bot = self.bot
                 stop_bot_process(old_bot)
@@ -258,7 +337,7 @@ class ComponentSupervisor:
 
         if self.webapp is not None:
             returncode = self.webapp.process.poll()
-            if returncode is not None and returncode != 0:
+            if returncode is not None:
                 append_supervisor_log(self.log_dir, f"Restarting webapp after exit code {returncode}")
                 old_webapp = self.webapp
                 stop_webapp_process(old_webapp)
@@ -272,6 +351,7 @@ class ComponentSupervisor:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=MONITOR_INTERVAL_S + 1)
+        stop_player_process(self.player)
         stop_recognition_worker(self.worker)
         stop_bot_process(self.bot)
         stop_webapp_process(self.webapp)

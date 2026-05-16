@@ -76,6 +76,13 @@ class TestInvalidCameraExit(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("cannot open camera index 99", stderr.getvalue())
 
+    def test_uses_directshow_backend_by_default(self) -> None:
+        fake = _FakeCapture([], opened=False)
+        with mock.patch.object(worker.cv2, "VideoCapture", return_value=fake) as video_capture:
+            worker.run({"camera_device_index": 3, "people_db_path": "people.json"})
+        self.assertEqual(video_capture.call_args.args[0], 3)
+        self.assertEqual(video_capture.call_args.args[1], worker.cv2.CAP_DSHOW)
+
 
 class TestStopEventCleanShutdown(unittest.TestCase):
     def test_stop_event_set_before_loop_returns_cleanly(self) -> None:
@@ -86,6 +93,18 @@ class TestStopEventCleanShutdown(unittest.TestCase):
             exit_code = worker.run(
                 {"camera_device_index": 0, "people_db_path": "does-not-exist.json"},
                 stop_event=stop_event,
+            )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(fake.release_calls, 1)
+
+    def test_exits_when_parent_process_is_gone(self) -> None:
+        fake = _FakeCapture([np.zeros((480, 640, 3), dtype=np.uint8)] * 3)
+        parent = mock.Mock()
+        parent.is_alive.return_value = False
+        with mock.patch.object(worker.cv2, "VideoCapture", return_value=fake), \
+             mock.patch.object(worker.multiprocessing, "parent_process", return_value=parent):
+            exit_code = worker.run(
+                {"camera_device_index": 0, "people_db_path": "does-not-exist.json"}
             )
         self.assertEqual(exit_code, 0)
         self.assertEqual(fake.release_calls, 1)
@@ -237,6 +256,19 @@ class TestGreetingCooldown(unittest.TestCase):
         self.assertEqual(first["timestamp"], 100.0)
         self.assertEqual(second["name"], "Alice")
         self.assertEqual(second["timestamp"], 190.0)
+        with self.assertRaises(queue_module.Empty):
+            greeting_queue.get_nowait()
+
+
+class TestGreetingQueueBackpressure(unittest.TestCase):
+    def test_full_greeting_queue_drops_stale_event_for_newest(self) -> None:
+        greeting_queue = queue_module.Queue(maxsize=1)
+        greeting_queue.put_nowait({"name": "Old"})
+
+        emitted = worker._try_put_greeting_event(greeting_queue, {"name": "New"})
+
+        self.assertTrue(emitted)
+        self.assertEqual(greeting_queue.get_nowait()["name"], "New")
         with self.assertRaises(queue_module.Empty):
             greeting_queue.get_nowait()
 

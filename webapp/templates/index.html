@@ -1,107 +1,75 @@
 {% extends "base.html" %}
 
-{% block page_title %}Kiosk overview{% endblock %}
-{% block page_subtitle %}Live status of the people registry and promo playlist.{% endblock %}
-
 {% block content %}
-<section class="hero">
-  <article class="hero-card">
-    <span class="hero-icon hero-icon--people">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3.5"/><path d="M2.5 19c1.2-3 3.6-4.5 6.5-4.5s5.3 1.5 6.5 4.5"/><circle cx="17" cy="8" r="2.6"/><path d="M15 14.6c1.6-.4 3.4 0 4.6 1.3"/></svg>
-    </span>
-    <div class="hero-body">
-      <span class="hero-label">Registered people</span>
-      <strong>{{ stats.people }}</strong>
-      <span class="hero-trend">Faces stored locally · embeddings cached</span>
-    </div>
-  </article>
-
-  <article class="hero-card">
-    <span class="hero-icon hero-icon--video">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10 9.5v5l4-2.5z" fill="currentColor"/></svg>
-    </span>
-    <div class="hero-body">
-      <span class="hero-label">Playlist videos</span>
-      <strong>{{ stats.videos }}</strong>
-      <span class="hero-trend">Looping fullscreen on the kiosk</span>
-    </div>
-  </article>
-
-  <article class="hero-card">
-    <span class="hero-icon hero-icon--camera">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2h6l2 2h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
-    </span>
-    <div class="hero-body">
-      <span class="hero-label">Camera device</span>
-      <strong>#{{ stats.camera }}</strong>
-      <span class="hero-trend">USB index from config.yaml</span>
-    </div>
-  </article>
-
-  <article class="hero-card">
-    <span class="hero-icon hero-icon--shield">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.2 8.4-8 9-4.8-.6-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/></svg>
-    </span>
-    <div class="hero-body">
-      <span class="hero-label">Admin login</span>
-      <strong>{% if stats.auth %}Protected{% else %}Open{% endif %}</strong>
-      <span class="hero-trend">{% if stats.auth %}Password required{% else %}Set in config.yaml{% endif %}</span>
-    </div>
-  </article>
+<section class="dashboard" aria-label="Kiosk status">
+  <div class="metric">
+    <span class="metric-label">People</span>
+    <strong>{{ stats.people }}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">Videos</span>
+    <strong>{{ stats.videos }}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">Camera</span>
+    <strong>#{{ stats.camera }}</strong>
+  </div>
+  <div class="metric">
+    <span class="metric-label">Web Login</span>
+    <strong>{% if stats.auth %}On{% else %}Off{% endif %}</strong>
+  </div>
 </section>
 
 <div class="grid">
-
   <section class="card" id="people-card">
     <div class="card-head">
       <div>
-        <div class="kicker">Registry</div>
         <h2>People</h2>
-        <p>Registered faces and greeting copy.</p>
+        <p>Registered faces and greeting settings.</p>
       </div>
       <span class="count">{{ people | length }}</span>
     </div>
 
     {% if people %}
-      <ul class="list people-list">
+      <ul class="list">
         {% for person in people %}
-          <li class="person-row">
+          <li>
             {% if person.has_photo %}
               <img class="face" src="{{ url_for('face_photo', safe_name=person.safe) }}" alt="">
             {% else %}
               <div class="placeholder">{{ person.initial }}</div>
             {% endif %}
+
             <div class="person-body">
               <div class="person-title">
                 <span class="name">{{ person.name }}</span>
-                <span class="chip chip-lang">{{ person.language|upper }}</span>
-                {% if person.birthday %}<span class="chip chip-cake">🎂 {{ person.birthday }}</span>{% endif %}
+                <span class="meta">{{ person.language|upper }}{% if person.birthday %} - {{ person.birthday }}{% endif %}</span>
               </div>
               {% if person.custom_message %}
-                <div class="person-meta"><span class="quote">“{{ person.custom_message }}”</span></div>
+                <div class="person-meta">{{ person.custom_message }}</div>
               {% endif %}
+
               <details class="metadata-editor">
-                <summary>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-                  Edit greeting
-                </summary>
+                <summary>Edit greeting</summary>
                 <form class="stack" method="post" action="{{ url_for('update_person_route') }}">
                   <input type="hidden" name="name" value="{{ person.name }}">
-                  <div class="field">
-                    <label>Language</label>
-                    <select name="language">
-                      <option value="en" {% if person.language == 'en' %}selected{% endif %}>English</option>
-                      <option value="uz" {% if person.language == 'uz' %}selected{% endif %}>Uzbek</option>
-                      <option value="ru" {% if person.language == 'ru' %}selected{% endif %}>Russian</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label>Birthday (MM-DD)</label>
-                    <input type="text" name="birthday" value="{{ person.birthday }}" placeholder="03-21">
+                  <div class="row">
+                    <div class="field">
+                      <label>Language</label>
+                      <select name="language">
+                        <option value="en" {% if person.language == 'en' %}selected{% endif %}>English</option>
+                        <option value="uz" {% if person.language == 'uz' %}selected{% endif %}>Uzbek</option>
+                        <option value="ru" {% if person.language == 'ru' %}selected{% endif %}>Russian</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label>Birthday (MM-DD)</label>
+                      <input type="text" name="birthday" value="{{ person.birthday }}" placeholder="05-16">
+                    </div>
                   </div>
                   <div class="field">
                     <label>Custom greeting</label>
-                    <input type="text" name="custom_message" value="{{ person.custom_message }}" placeholder="Welcome back, captain.">
+                    <input type="text" name="custom_message" value="{{ person.custom_message }}" placeholder="Welcome back.">
                   </div>
                   <div class="field">
                     <label>Rotating flavor lines</label>
@@ -111,244 +79,97 @@
                 </form>
               </details>
             </div>
+
             <form class="inline" method="post" action="{{ url_for('delete_person') }}"
                   onsubmit="return confirm('Remove {{ person.name }}?');">
               <input type="hidden" name="name" value="{{ person.name }}">
-              <button type="submit" class="danger icon-btn" aria-label="Delete {{ person.name }}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></svg>
-              </button>
+              <button type="submit" class="danger">Delete</button>
             </form>
           </li>
         {% endfor %}
       </ul>
     {% else %}
       <div class="empty">
-        <div class="empty-art">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="3.5"/><path d="M4 20c1.6-3.8 4.5-5.5 8-5.5s6.4 1.7 8 5.5"/></svg>
-        </div>
         <strong>No people registered yet.</strong>
-        <span>Add a photo or capture from camera to start greeting visitors.</span>
+        <span>Add a photo or capture from the local camera.</span>
       </div>
     {% endif %}
 
-    <div class="tabbed">
-      <div class="tabs" role="tablist">
-        <button type="button" class="tab active" data-tab="upload">Upload photo</button>
-        <button type="button" class="tab" data-tab="capture">Capture from camera</button>
+    <form class="add action-panel" method="post" action="{{ url_for('add_person_route') }}"
+          enctype="multipart/form-data">
+      <div class="form-title">Add from photo</div>
+      <div class="row">
+        <input type="text" name="name" placeholder="Name" required>
+        <input type="file" name="photo" accept="image/*" required>
       </div>
+      <div class="row">
+        <select name="language">
+          <option value="en">English</option>
+          <option value="uz">Uzbek</option>
+          <option value="ru">Russian</option>
+        </select>
+        <input type="text" name="birthday" placeholder="Birthday MM-DD">
+      </div>
+      <input type="text" name="custom_message" placeholder="Custom greeting message">
+      <textarea name="flavor" rows="3" placeholder="Optional rotating flavor lines, one per line"></textarea>
+      <button type="submit" class="primary">Add person</button>
+    </form>
 
-      <form class="add tab-panel active" data-tab-panel="upload"
-            method="post" action="{{ url_for('add_person_route') }}"
-            enctype="multipart/form-data">
-        <div class="row">
-          <div class="field">
-            <label>Name</label>
-            <input type="text" name="name" placeholder="e.g. Aziza Karimova" required>
-          </div>
-          <div class="field">
-            <label>Photo</label>
-            <input type="file" name="photo" accept="image/*" required>
-          </div>
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Language</label>
-            <select name="language">
-              <option value="en">English</option>
-              <option value="uz">Uzbek</option>
-              <option value="ru">Russian</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Birthday (MM-DD)</label>
-            <input type="text" name="birthday" placeholder="08-14">
-          </div>
-        </div>
-        <div class="field">
-          <label>Custom message</label>
-          <input type="text" name="custom_message" placeholder="Welcome back to the office!">
-        </div>
-        <div class="field">
-          <label>Rotating flavor lines</label>
-          <textarea name="flavor" rows="3" placeholder="One line per row"></textarea>
-        </div>
-        <button type="submit" class="primary block">Add person</button>
-      </form>
-
-      <form class="add tab-panel" data-tab-panel="capture"
-            method="post" action="{{ url_for('capture_person_route') }}">
-        <div class="row">
-          <div class="field">
-            <label>Name</label>
-            <input type="text" name="name" placeholder="e.g. Sanjar M." required>
-          </div>
-          <div class="field">
-            <label>Language</label>
-            <select name="language">
-              <option value="en">English</option>
-              <option value="uz">Uzbek</option>
-              <option value="ru">Russian</option>
-            </select>
-          </div>
-        </div>
-        <div class="row">
-          <div class="field">
-            <label>Birthday (MM-DD)</label>
-            <input type="text" name="birthday" placeholder="11-02">
-          </div>
-          <div class="field">
-            <label>Custom message</label>
-            <input type="text" name="custom_message" placeholder="Welcome to the office!">
-          </div>
-        </div>
-        <div class="field">
-          <label>Rotating flavor lines</label>
-          <textarea name="flavor" rows="3" placeholder="One line per row"></textarea>
-        </div>
-        <button type="submit" class="primary block">Capture from camera</button>
-      </form>
-    </div>
+    <form class="add action-panel" method="post" action="{{ url_for('capture_person_route') }}">
+      <div class="form-title">Capture from camera</div>
+      <div class="row">
+        <input type="text" name="name" placeholder="Name" required>
+        <select name="language">
+          <option value="en">English</option>
+          <option value="uz">Uzbek</option>
+          <option value="ru">Russian</option>
+        </select>
+      </div>
+      <div class="row">
+        <input type="text" name="birthday" placeholder="Birthday MM-DD">
+        <input type="text" name="custom_message" placeholder="Custom greeting message">
+      </div>
+      <textarea name="flavor" rows="3" placeholder="Optional rotating flavor lines, one per line"></textarea>
+      <button type="submit" class="primary">Capture photo</button>
+    </form>
   </section>
 
   <section class="card" id="videos-card">
     <div class="card-head">
       <div>
-        <div class="kicker">Playlist</div>
         <h2>Videos</h2>
-        <p>Promo files looping fullscreen on the kiosk.</p>
+        <p>Muted promo files played fullscreen in a continuous loop.</p>
       </div>
       <span class="count">{{ videos | length }}</span>
     </div>
 
     {% if videos %}
-      <ul class="list videos-list">
+      <ul class="list">
         {% for video in videos %}
-          <li class="video-row">
-            <div class="video-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20" fill="currentColor" stroke="none"/></svg>
-            </div>
-            <span class="filename">
-              <strong>{{ video.name }}</strong>
-              <small>MP4 / MOV / WEBM</small>
-            </span>
+          <li>
+            <div class="video-icon">MP4</div>
+            <div class="filename" title="{{ video.name }}"><strong>{{ video.name }}</strong></div>
             <form class="inline" method="post" action="{{ url_for('delete_video_route') }}"
                   onsubmit="return confirm('Remove {{ video.name }}?');">
               <input type="hidden" name="filename" value="{{ video.name }}">
-              <button type="submit" class="danger icon-btn" aria-label="Delete {{ video.name }}">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/></svg>
-              </button>
+              <button type="submit" class="danger">Delete</button>
             </form>
           </li>
         {% endfor %}
       </ul>
     {% else %}
       <div class="empty">
-        <div class="empty-art">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10 9.5v5l4-2.5z"/></svg>
-        </div>
         <strong>No videos in playlist.</strong>
         <span>Upload an MP4, MOV, or WEBM file for the kiosk loop.</span>
       </div>
     {% endif %}
 
-    <form class="add dropzone" method="post" action="{{ url_for('add_video_route') }}"
-          enctype="multipart/form-data" id="video-dropzone">
+    <form class="add action-panel" method="post" action="{{ url_for('add_video_route') }}"
+          enctype="multipart/form-data">
       <div class="form-title">Upload to playlist</div>
-      <label class="drop-area" for="video-file">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 8l5-5 5 5"/><path d="M5 17v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
-          <span class="drop-title">Drop a video here</span>
-          <span class="drop-sub">or click to browse · MP4, MOV, WEBM</span>
-        <input id="video-file" type="file" name="video" accept="video/mp4,video/quicktime,video/webm" required>
-      </label>
-      <button type="submit" class="primary block">Upload video</button>
+      <input type="file" name="video" accept="video/mp4,video/quicktime,video/webm" required>
+      <button type="submit" class="primary">Upload video</button>
     </form>
   </section>
-
 </div>
-
-<section class="card system-card" id="system-card">
-  <div class="card-head">
-    <div>
-      <div class="kicker">System</div>
-      <h2>Quick reference</h2>
-      <p>Where things live on disk and how to operate the kiosk.</p>
-    </div>
-  </div>
-  <ul class="info-grid">
-    <li>
-      <span class="info-label">People DB</span>
-      <code>people.json</code>
-    </li>
-    <li>
-      <span class="info-label">Face photos</span>
-      <code>faces/&lt;name&gt;.jpg</code>
-    </li>
-    <li>
-      <span class="info-label">Playlist folder</span>
-      <code>videos/</code>
-    </li>
-    <li>
-      <span class="info-label">Test greeting</span>
-      <code>Press G on kiosk</code>
-    </li>
-    <li>
-      <span class="info-label">Exit kiosk</span>
-      <code>Esc</code>
-    </li>
-    <li>
-      <span class="info-label">Privacy</span>
-      <code>All data local · no cloud</code>
-    </li>
-  </ul>
-</section>
-
-<script>
-  document.querySelectorAll('.tabs').forEach((tabs) => {
-    const panels = tabs.parentElement.querySelectorAll('[data-tab-panel]');
-    tabs.querySelectorAll('.tab').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        tabs.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-        panels.forEach((p) => {
-          p.classList.toggle('active', p.dataset.tabPanel === btn.dataset.tab);
-        });
-      });
-    });
-  });
-
-  // Drag-drop highlight for video dropzone
-  const dz = document.getElementById('video-dropzone');
-  if (dz) {
-    const fileInput = dz.querySelector('input[type=file]');
-    const area = dz.querySelector('.drop-area');
-    ['dragenter', 'dragover'].forEach((ev) => area.addEventListener(ev, (e) => {
-      e.preventDefault(); area.classList.add('is-over');
-    }));
-    ['dragleave', 'drop'].forEach((ev) => area.addEventListener(ev, () => area.classList.remove('is-over')));
-    area.addEventListener('drop', (e) => {
-      e.preventDefault();
-      if (e.dataTransfer.files.length) {
-        fileInput.files = e.dataTransfer.files;
-        area.querySelector('.drop-title').textContent = e.dataTransfer.files[0].name;
-      }
-    });
-    fileInput.addEventListener('change', () => {
-      if (fileInput.files.length) {
-        area.querySelector('.drop-title').textContent = fileInput.files[0].name;
-      }
-    });
-  }
-
-  // Sidebar nav active state on scroll
-  const sections = document.querySelectorAll('.card[id]');
-  const navItems = document.querySelectorAll('.nav-item');
-  function syncNav() {
-    let active = sections[0];
-    sections.forEach((s) => { if (s.getBoundingClientRect().top < 200) active = s; });
-    navItems.forEach((n) => {
-      n.classList.toggle('active', n.getAttribute('href') === '#' + (active && active.id));
-    });
-  }
-  window.addEventListener('scroll', syncNav, { passive: true });
-</script>
 {% endblock %}

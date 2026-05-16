@@ -83,6 +83,11 @@ class MenuMarkupTests(unittest.TestCase):
         self.assertIn("delete_person:Bob", flat)
         self.assertIn("menu:people", flat)
 
+    def test_user_menu_starts_registration(self) -> None:
+        markup = bot._user_menu_markup()
+        flat = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+        self.assertEqual(flat, ["user:join"])
+
 
 class CallbackDispatchTests(unittest.TestCase):
     def _context(self, chat_id: int, **bot_data):
@@ -108,6 +113,35 @@ class CallbackDispatchTests(unittest.TestCase):
             asyncio.run(bot.handle_menu_callback(update, context))
         self.assertEqual(update.callback_query.edits, [])
         self.assertIn("Unauthorized", update.callback_query.answers[0])
+
+    def test_user_join_callback_starts_self_registration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            update = _FakeUpdate(999, callback_data="user:join")
+            context = self._context(
+                123,
+                pending_self_submit={},
+                people_db_path=Path(tmp) / "people.json",
+            )
+            with mock.patch.object(bot, "BOT_LOG_STREAM", io.StringIO()):
+                asyncio.run(bot.handle_menu_callback(update, context))
+
+            self.assertEqual(context.bot_data["pending_self_submit"][999], {"step": "name"})
+            text, markup = update.callback_query.edits[0]
+            self.assertIn("Send your name", text)
+            flat = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+            self.assertEqual(flat, ["user:cancel"])
+
+    def test_user_cancel_callback_clears_self_registration(self) -> None:
+        update = _FakeUpdate(999, callback_data="user:cancel")
+        context = self._context(123, pending_self_submit={999: {"step": "photo", "name": "Aziza"}})
+
+        asyncio.run(bot.handle_menu_callback(update, context))
+
+        self.assertEqual(context.bot_data["pending_self_submit"], {})
+        text, markup = update.callback_query.edits[0]
+        self.assertIn("cancelled", text)
+        flat = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+        self.assertEqual(flat, ["user:join"])
 
     def test_menu_people_edits_to_people_menu(self) -> None:
         update = _FakeUpdate(123, callback_data="menu:people")

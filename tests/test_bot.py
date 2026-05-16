@@ -443,6 +443,30 @@ class SelfRegistrationFlowTests(unittest.TestCase):
             self.assertFalse(photo.exists())
 
 
+    def test_duplicate_admin_approval_tap_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            context = self._context(Path(tmp))
+            update = _FakeCallbackUpdate(123, "self_approve:missing")
+
+            asyncio.run(bot.handle_menu_callback(update, context))
+
+            self.assertEqual(update.callback_query.edits, ["Registration request is no longer available."])
+            self.assertEqual(context.bot.sent_messages, [])
+
+    def test_cancelled_self_registration_text_goes_back_to_join_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            context = self._context(Path(tmp))
+            context.bot_data["pending_self_submit"][999] = {"step": "photo", "name": "Aziza"}
+            cancel_update = _FakeCallbackUpdate(999, "user:cancel")
+
+            asyncio.run(bot.handle_menu_callback(cancel_update, context))
+            text_update = _FakeUpdate(999, "Aziza")
+            asyncio.run(bot.handle_text_message(text_update, context))
+
+            self.assertEqual(context.bot_data["pending_self_submit"], {})
+            self.assertEqual(text_update.effective_message.replies, ["Use /join to request registration."])
+
+
 def _write_people_json(path: Path, names: list[str]) -> None:
     payload = {"people": [{"name": n, "encoding": [0.0] * 128} for n in names]}
     path.write_text(json.dumps(payload), encoding="utf-8")

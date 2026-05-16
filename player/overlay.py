@@ -7,6 +7,7 @@ native Media Foundation surface without interfering with playback.
 
 from __future__ import annotations
 
+import os
 import string
 from pathlib import Path
 from typing import Optional
@@ -17,9 +18,11 @@ from PyQt6.QtCore import (
     QPauseAnimation,
     QPropertyAnimation,
     QRect,
+    QRectF,
     QSequentialAnimationGroup,
     QSize,
     Qt,
+    QTimer,
 )
 from PyQt6.QtGui import (
     QBrush,
@@ -116,11 +119,15 @@ def clamp_hold_ms(hold_ms: int) -> int:
 def split_greeting_text(text: str) -> tuple[str, str]:
     """Split a greeting into title and optional detail text."""
     normalized = " ".join(str(text).strip().split())
-    for separator in (" - ", " — ", " â€” "):
+    for separator in (" - ", " -- "):
         if separator in normalized:
             title, detail = normalized.split(separator, 1)
             return title.strip(), detail.strip()
     return normalized, ""
+
+
+def _is_offscreen_qt() -> bool:
+    return os.environ.get("QT_QPA_PLATFORM", "").lower() == "offscreen"
 
 
 class AvatarLabel(QLabel):
@@ -158,8 +165,9 @@ class AvatarLabel(QLabel):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         rect = self.rect().adjusted(2, 2, -2, -2)
+        ellipse_rect = QRectF(rect)
         path = QPainterPath()
-        path.addEllipse(rect)
+        path.addEllipse(ellipse_rect)
         painter.setClipPath(path)
 
         if self._pixmap is not None and not self._pixmap.isNull():
@@ -183,7 +191,7 @@ class AvatarLabel(QLabel):
         ring_pen.setWidth(2)
         painter.setPen(ring_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(rect)
+        painter.drawEllipse(ellipse_rect)
 
 
 class GreetingOverlay(QWidget):
@@ -251,7 +259,7 @@ class GreetingOverlay(QWidget):
         self.detail_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
         self.detail_label.setWordWrap(True)
 
-        self.brand_tag = QLabel("FACETAG · KIOSK", self.card)
+        self.brand_tag = QLabel("FACETAG KIOSK", self.card)
         self.brand_tag.setObjectName("brandTag")
 
         text_layout = QVBoxLayout()
@@ -275,6 +283,9 @@ class GreetingOverlay(QWidget):
         self.setWindowOpacity(0.0)
 
         self.animation_group: Optional[QSequentialAnimationGroup] = None
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.timeout.connect(self._on_finished)
         self._apply_font()
         self.hide()
         self.reposition()
@@ -314,12 +325,22 @@ class GreetingOverlay(QWidget):
         self._layout_card()
         self.setWindowOpacity(0.0)
         self.opacity_effect.setOpacity(0.0)
+
+        if _is_offscreen_qt():
+            if self.animation_group is not None:
+                self.animation_group.stop()
+                self.animation_group.setParent(None)
+            self.animation_group = QSequentialAnimationGroup()
+            self._hide_timer.stop()
+            self._hide_timer.start(self.fade_ms + self.hold_ms + self.fade_ms)
+            return
+
         self.raise_()
         self.show()
 
         if self.animation_group is not None:
             self.animation_group.stop()
-            self.animation_group.deleteLater()
+            self.animation_group.setParent(None)
             self.animation_group = None
 
         target = self.card.geometry()
@@ -379,6 +400,21 @@ class GreetingOverlay(QWidget):
 
         self.animation_group = group
         group.start()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self._stop_active_animation()
+        super().closeEvent(event)
+
+    def deleteLater(self) -> None:  # noqa: N802 - Qt API
+        self._stop_active_animation()
+        super().deleteLater()
+
+    def _stop_active_animation(self) -> None:
+        self._hide_timer.stop()
+        if self.animation_group is not None:
+            self.animation_group.stop()
+            self.animation_group.setParent(None)
+            self.animation_group = None
 
     def _apply_font(self) -> None:
         height = self._anchor.height() if self._anchor is not None else 1080

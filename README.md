@@ -2,6 +2,38 @@
 
 Office entrance kiosk that loops promo videos fullscreen and greets registered people by name using on-device face recognition. Admins manage people and playlist content from Telegram. All biometric data stays on the demo machine.
 
+## Quick demo run
+
+From this repository on the demo laptop:
+
+```powershell
+.\.venv-smoke-dlib-corrected\Scripts\python.exe run.py
+```
+
+This starts the full local system: fullscreen muted promo player, face recognition worker, Telegram bot, and the local web admin at `http://127.0.0.1:8000/`.
+
+Press **Esc** in the fullscreen player to stop the whole launcher cleanly. Use **Ctrl+C** in the terminal as the fallback stop.
+
+Current demo web login:
+
+```text
+username: admin123
+password: admin123
+```
+
+Useful commands:
+
+```powershell
+# Show recent component logs
+.\.venv-smoke-dlib-corrected\Scripts\python.exe run.py --tail-logs
+
+# Run the full regression suite
+.\.venv-smoke-dlib-corrected\Scripts\python.exe -m pytest -q
+
+# Run only the web admin
+.\.venv-smoke-dlib-corrected\Scripts\python.exe webapp.py
+```
+
 ## Setup
 
 1. **Python 3.11+** with a fresh virtual environment:
@@ -65,7 +97,7 @@ Office entrance kiosk that loops promo videos fullscreen and greets registered p
 
 ## Architecture
 
-Three coordinated OS processes managed by `run.py` (supervisor):
+Four coordinated OS processes managed by `run.py` (supervisor):
 
 ```
                                   +-----------------------------+
@@ -78,7 +110,7 @@ Three coordinated OS processes managed by `run.py` (supervisor):
        v                             v                        v                             v
 +--------------+              +---------------+         +--------------+              logs/*.log
 |  Player      |  greeting    |  Recognition  |         |  Telegram    |
-|  (Qt main)   |<-------------|  worker       |         |  bot         |
+|  (Qt proc)   |<-------------|  worker       |         |  bot         |
 |              |  mp.Queue    |  (mp.Process) |         |  (subprocess)|
 | - fullscreen |              | - cv2 capture |         |              |
 | - playlist   |              | - HOG detect  |         | - admin      |
@@ -109,6 +141,7 @@ Three coordinated OS processes managed by `run.py` (supervisor):
 Key contracts:
 
 - **IPC:** worker → player via `multiprocessing.Queue` (greeting events `{name, timestamp}`).
+- **Persistence:** player, worker, bot, and webapp are supervisor-managed. A crashed player restarts; pressing Esc exits cleanly and stops the launcher.
 - **Atomic writes:** `recognition/writer.py` and `player/video_writer.py` both write to a `.tmp` location, then `os.replace()` to the final path. Watchers never see partial writes.
 - **Hot reload:** `recognition/hot_reload.py` watches `people.json` via `watchdog`; the worker swaps its in-memory `Registry` within 5 s of any admin write — no restart needed (FR18, FR19, NFR4).
 - **Playlist rescan:** the player rescans `videos/` at the end of each video iteration (FR11, NFR5). New videos appear within one loop; deleted ones drop out.
@@ -230,7 +263,7 @@ recognition/        face detection + matching
   worker.py         the recognition process loop
   hot_reload.py     watchdog-based registry reloader
 
-tests/              unit + integration tests (269 currently)
+tests/              unit + integration tests (286 currently)
   shakedown.md      60-min stability run log
   smoke_dlib.py     dlib install verification
 

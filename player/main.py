@@ -59,6 +59,7 @@ def _safe_photo_stem(name: str) -> str | None:
 
 GREETING_QUEUE_POLL_MS = 100
 DEBUG_CAMERA_POLL_MS = 100
+PLAYBACK_WATCHDOG_MS = 1500
 
 
 class _PlayerWindow(QMainWindow):
@@ -146,6 +147,11 @@ class Player:
             self.main_window.attach_debug_overlay(self.debug_overlay)
 
         self.audio_output = QAudioOutput()
+        self.audio_output.setVolume(0.0)
+        try:
+            self.audio_output.setMuted(True)
+        except AttributeError:
+            pass
         self.media_player = QMediaPlayer()
         self.media_player.setVideoOutput(self.video_widget)
         self.media_player.setAudioOutput(self.audio_output)
@@ -158,12 +164,16 @@ class Player:
         self._debug_camera_poll_interval_ms = debug_camera_poll_interval_ms
         self._greeting_poll_timer: QTimer | None = None
         self._debug_camera_poll_timer: QTimer | None = None
+        self._playback_watchdog_timer: QTimer | None = None
 
     def start(self) -> None:
         self.main_window.showFullScreen()
         # Snap overlay to the main window now that it has a real geometry.
         self.overlay.reposition()
         self._load_and_play(self._index)
+        self._playback_watchdog_timer = QTimer(self.main_window)
+        self._playback_watchdog_timer.timeout.connect(self._ensure_playing)
+        self._playback_watchdog_timer.start(PLAYBACK_WATCHDOG_MS)
         if self._greeting_queue is not None:
             self._greeting_poll_timer = QTimer(self.main_window)
             self._greeting_poll_timer.timeout.connect(self._poll_greeting_queue)
@@ -230,8 +240,31 @@ class Player:
 
     def _load_and_play(self, index: int) -> None:
         path = self._playlist[index]
+        self.audio_output.setVolume(0.0)
+        try:
+            self.audio_output.setMuted(True)
+        except AttributeError:
+            pass
         self.media_player.setSource(QUrl.fromLocalFile(str(path.resolve())))
         self.media_player.play()
+
+    def _ensure_playing(self) -> None:
+        if self._shutdown_done:
+            return
+        status = self.media_player.mediaStatus()
+        if status in {
+            QMediaPlayer.MediaStatus.NoMedia,
+            QMediaPlayer.MediaStatus.EndOfMedia,
+            QMediaPlayer.MediaStatus.InvalidMedia,
+        }:
+            return
+        if self.media_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            self.audio_output.setVolume(0.0)
+            try:
+                self.audio_output.setMuted(True)
+            except AttributeError:
+                pass
+            self.media_player.play()
 
     def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
@@ -250,6 +283,12 @@ class Player:
         if self._shutdown_done:
             return
         self._shutdown_done = True
+        if self._playback_watchdog_timer is not None:
+            self._playback_watchdog_timer.stop()
+        if self._greeting_poll_timer is not None:
+            self._greeting_poll_timer.stop()
+        if self._debug_camera_poll_timer is not None:
+            self._debug_camera_poll_timer.stop()
         self.media_player.stop()
         self.media_player.setSource(QUrl())
         if self.overlay is not None:
