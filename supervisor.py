@@ -133,25 +133,37 @@ def start_player_process(
     return PlayerHandle(process=process)
 
 
+def _join_quietly(process, timeout: float) -> None:
+    """Join a multiprocessing.Process, swallowing KeyboardInterrupt.
+
+    A second Ctrl+C while ``WaitForSingleObject`` is blocking the join
+    can otherwise leak a KeyboardInterrupt out of the shutdown path.
+    """
+    try:
+        process.join(timeout=timeout)
+    except KeyboardInterrupt:
+        pass
+
+
 def stop_player_process(handle: PlayerHandle | None) -> None:
     if handle is None:
         return
     if handle.process.is_alive():
         handle.process.terminate()
-        handle.process.join(timeout=PLAYER_JOIN_TIMEOUT_S)
+        _join_quietly(handle.process, PLAYER_JOIN_TIMEOUT_S)
     if handle.process.is_alive():
         handle.process.kill()
-        handle.process.join(timeout=PLAYER_JOIN_TIMEOUT_S)
+        _join_quietly(handle.process, PLAYER_JOIN_TIMEOUT_S)
 
 
 def stop_recognition_worker(handle: WorkerHandle | None) -> None:
     if handle is None:
         return
     handle.stop_event.set()
-    handle.process.join(timeout=WORKER_JOIN_TIMEOUT_S)
+    _join_quietly(handle.process, WORKER_JOIN_TIMEOUT_S)
     if handle.process.is_alive():
         handle.process.terminate()
-        handle.process.join(timeout=WORKER_JOIN_TIMEOUT_S)
+        _join_quietly(handle.process, WORKER_JOIN_TIMEOUT_S)
 
 
 def start_bot_process(
