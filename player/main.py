@@ -40,11 +40,22 @@ from PyQt6.QtWidgets import QApplication, QMainWindow
 
 from datetime import datetime
 
+import re
+
 from player.debug_overlay import DebugCameraOverlay
 from player.greeting_queue import drain_greeting_queue
 from player.greeting_text import build_greeting
 from player.overlay import GreetingOverlay
 from player.playlist import active_video_folder, advance, next_after_rescan, scan_playlist
+
+# Mirrors recognition.writer._safe_name so the player process doesn't pull in
+# cv2 / face_recognition / filelock just to resolve a photo path.
+_UNSAFE_NAME_CHARS = re.compile(r"[^a-z0-9._-]+")
+
+
+def _safe_photo_stem(name: str) -> str | None:
+    cleaned = _UNSAFE_NAME_CHARS.sub("_", name.strip().lower()).strip("_")
+    return cleaned or None
 
 GREETING_QUEUE_POLL_MS = 100
 DEBUG_CAMERA_POLL_MS = 100
@@ -102,6 +113,7 @@ class Player:
         video_folder: Path | None = None,
         playlist_schedule: list[dict[str, Any]] | None = None,
         holidays: dict[str, str] | None = None,
+        faces_folder: Path | None = None,
     ) -> None:
         if not playlist:
             raise ValueError("playlist must contain at least one video")
@@ -110,6 +122,7 @@ class Player:
         self._video_folder = Path(video_folder) if video_folder is not None else None
         self._playlist_schedule = list(playlist_schedule or [])
         self._holidays = dict(holidays) if holidays else {}
+        self._faces_folder = Path(faces_folder) if faces_folder is not None else None
 
         self.main_window = _PlayerWindow(
             on_close=self._shutdown,
@@ -187,8 +200,18 @@ class Player:
                 birthday=birthday,
                 custom_message=custom_message,
             )
+        photo_path = self._resolve_photo_path(name)
         self.overlay.reposition()
-        self.overlay.start_fade(display_text)
+        self.overlay.start_fade(display_text, photo_path=photo_path)
+
+    def _resolve_photo_path(self, name: str) -> str | None:
+        if not name or name == "TEST GREETING" or self._faces_folder is None:
+            return None
+        safe = _safe_photo_stem(name)
+        if safe is None:
+            return None
+        candidate = self._faces_folder / f"{safe}.jpg"
+        return str(candidate) if candidate.is_file() else None
 
     def _poll_greeting_queue(self) -> None:
         drain_greeting_queue(self._greeting_queue, self.show_greeting)
@@ -244,6 +267,7 @@ def run_player(config: dict[str, Any], greeting_queue=None, debug_camera_queue=N
     Returns the Qt exit code so ``run.py`` can pass it to ``sys.exit``.
     """
     video_folder = Path(config.get("video_folder", "videos")).resolve()
+    faces_folder = Path(config.get("faces_folder", "faces")).resolve()
     playlist_schedule = config.get("playlist_schedule") or []
     active_folder = active_video_folder(video_folder, playlist_schedule).resolve()
     playlist = scan_playlist(active_folder)
@@ -264,6 +288,7 @@ def run_player(config: dict[str, Any], greeting_queue=None, debug_camera_queue=N
         video_folder=video_folder,
         playlist_schedule=playlist_schedule,
         holidays=config.get("holidays") or {},
+        faces_folder=faces_folder,
     )
     player.start()
     # Keep a reference attached to the app so GC can't kill the pipeline.

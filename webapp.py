@@ -145,8 +145,14 @@ def create_app(config: dict | None = None) -> Flask:
 
         videos_paths = scan_playlist(app.config["VIDEO_FOLDER"])
         videos = [{"name": p.name} for p in videos_paths]
+        stats = {
+            "people": len(people),
+            "videos": len(videos),
+            "auth": auth_enabled(),
+            "camera": app.config["CAMERA_DEVICE_INDEX"],
+        }
 
-        return render_template("index.html", people=people, videos=videos)
+        return render_template("index.html", people=people, videos=videos, stats=stats)
 
     @app.route("/faces/<safe_name>.jpg")
     def face_photo(safe_name: str):
