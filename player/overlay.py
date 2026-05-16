@@ -33,6 +33,7 @@ from PyQt6.QtGui import (
     QPen,
     QPixmap,
 )
+from PyQt6.QtCore import QEvent
 from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -204,7 +205,10 @@ class GreetingOverlay(QWidget):
         hold_ms: int = DEFAULT_HOLD_MS,
         fade_ms: int = DEFAULT_FADE_MS,
     ) -> None:
-        super().__init__(None)
+        # Parent the overlay to the anchor (kiosk) window so Windows ties their
+        # z-order together. Without WindowStaysOnTopHint, the overlay can no
+        # longer cover unrelated apps — it only stacks above its parent.
+        super().__init__(anchor_window)
         self._anchor = anchor_window
         self.font_size_factor = font_size_factor
         self.hold_ms = clamp_hold_ms(hold_ms)
@@ -212,13 +216,17 @@ class GreetingOverlay(QWidget):
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
             | Qt.WindowType.WindowTransparentForInput
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+
+        # Watch the anchor for state and focus changes so the overlay hides
+        # when the kiosk is minimized, hidden, or loses foreground focus.
+        if anchor_window is not None:
+            anchor_window.installEventFilter(self)
 
         self.card = QFrame(self)
         self.card.setObjectName("greetingCard")
@@ -304,6 +312,45 @@ class GreetingOverlay(QWidget):
         self._apply_font()
         self._layout_card()
 
+    def _anchor_is_foreground(self) -> bool:
+        """Return True only when the kiosk window is the right place to draw on."""
+        if self._anchor is None:
+            return False
+        if not self._anchor.isVisible() or self._anchor.isMinimized():
+            return False
+        # On Windows, isActiveWindow() catches focus loss to another app's
+        # window so the overlay never leaks over Word, Chrome, etc.
+        return self._anchor.isActiveWindow()
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt API
+        """Mirror the anchor's window state so the overlay never escapes it."""
+        if watched is self._anchor and event is not None:
+            etype = event.type()
+            if etype in (
+                QEvent.Type.WindowStateChange,
+                QEvent.Type.WindowDeactivate,
+                QEvent.Type.Hide,
+            ):
+                if not self._anchor_is_foreground() and self.isVisible():
+                    self._cancel_animation()
+                    self.hide()
+            elif etype in (
+                QEvent.Type.WindowActivate,
+                QEvent.Type.Show,
+            ):
+                # Re-snap geometry when the kiosk regains focus; we don't
+                # auto-show the greeting again — it's a one-shot.
+                self.reposition()
+        return super().eventFilter(watched, event)
+
+    def _cancel_animation(self) -> None:
+        if self.animation_group is not None:
+            self.animation_group.stop()
+            self.animation_group.setParent(None)
+            self.animation_group = None
+        if self._hide_timer is not None:
+            self._hide_timer.stop()
+
     def start_fade(
         self,
         text: str,
@@ -311,6 +358,11 @@ class GreetingOverlay(QWidget):
         eyebrow: Optional[str] = None,
     ) -> None:
         """Trigger a fade-in, hold, fade-out cycle with the greeting text."""
+        # Suppress entirely when the kiosk isn't the foreground app, so the
+        # greeting never gets painted over Chrome / Word / etc.
+        if not _is_offscreen_qt() and not self._anchor_is_foreground():
+            return
+
         title, detail = split_greeting_text(text)
         self.label.setText(title)
         self.detail_label.setText(detail)
