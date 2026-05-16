@@ -16,3 +16,32 @@ video_folder: "videos"
 faces_folder: "faces"
 log_directory: "logs"
 people_db_path: "people.json"
+pending_submissions_folder: "pending_submissions"
+
+# Optional time-based playlist folders. First matching window wins.
+# Windows can cross midnight, for example 18:00 -> 08:00.
+playlist_schedule: []
+# Example:
+# playlist_schedule:
+#   - start: "08:00"
+#     end: "12:00"
+#     folder: "videos/morning"
+#   - start: "12:00"
+#     end: "18:00"
+#     folder: "videos/day"
+
+# Optional local web admin login. Leave blank to keep localhost-only access without a password.
+# Preferred: set one or more admin emails plus a shared local password.
+web_allowed_emails: []
+web_username: ""
+web_password: ""
+
+# Temporary local testing overlay. Set false before final demo/submission.
+debug_camera_overlay: true
+
+# Optional: holiday → headline map. Date keys are MM-DD (no year). Empty by default.
+# Example:
+#   holidays:
+#     "03-21": "Navruz mubarak"
+#     "01-01": "Happy New Year"
+holidays: {}

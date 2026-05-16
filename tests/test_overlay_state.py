@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
-from player.overlay import GreetingOverlay
+from player.overlay import GreetingOverlay, clamp_hold_ms, split_greeting_text
 
 
 def _get_app() -> QApplication:
@@ -42,7 +42,7 @@ class TestGreetingOverlayState(unittest.TestCase):
     def setUp(self) -> None:
         self.window = QMainWindow()
         self.window.resize(1280, 720)
-        self.overlay = GreetingOverlay(self.window, font_size_factor=0.08, hold_ms=50, fade_ms=50)
+        self.overlay = GreetingOverlay(self.window, font_size_factor=0.08, hold_ms=4_000, fade_ms=50)
 
     def tearDown(self) -> None:
         self.overlay.deleteLater()
@@ -72,11 +72,22 @@ class TestGreetingOverlayState(unittest.TestCase):
             self.assertEqual(first_group.state().value, 0)  # 0 == Stopped
 
     def test_widget_hides_after_full_cycle(self) -> None:
-        # 50ms fade + 50ms hold + 50ms fade = 150ms; wait 400ms to be safe.
+        # 50ms fade + 4000ms hold + 50ms fade = 4100ms; wait a little extra.
         self.overlay.start_fade("BYE")
-        QTimer.singleShot(400, self.app.quit)
+        QTimer.singleShot(4300, self.app.quit)
         self.app.exec()
         self.assertTrue(self.overlay.isHidden())
+
+    def test_hold_duration_clamped_to_four_to_six_seconds(self) -> None:
+        self.assertEqual(clamp_hold_ms(100), 4_000)
+        self.assertEqual(clamp_hold_ms(5_000), 5_000)
+        self.assertEqual(clamp_hold_ms(9_000), 6_000)
+
+    def test_greeting_text_splits_detail_line(self) -> None:
+        self.assertEqual(
+            split_greeting_text("Good morning, Alice! - nice scarf today"),
+            ("Good morning, Alice!", "nice scarf today"),
+        )
 
 
 if __name__ == "__main__":

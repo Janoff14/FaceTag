@@ -9,9 +9,9 @@ Forward-compatibility hooks for later stories:
 * :attr:`Player.main_window` and :attr:`Player.video_widget` are exposed so
   Story 1.4 can stack a QLabel overlay above the video widget without
   re-wiring construction.
-* :meth:`Player.show_greeting` is a no-op stub. Story 1.4 fills in the fade
-  animation; Story 2.4 calls it from a multiprocessing.Queue poller. Do
-  NOT add queue polling here.
+* :meth:`Player.show_greeting` is triggered from a non-blocking
+  multiprocessing.Queue poller. The recognition worker owns CPU-heavy face
+  matching; Qt only drains greeting events on its normal event loop.
 
 PyQt6 6.11 gotchas baked into this module:
 
@@ -27,6 +27,7 @@ PyQt6 6.11 gotchas baked into this module:
 
 from __future__ import annotations
 
+import queue
 import sys
 from pathlib import Path
 from typing import Any
@@ -37,10 +38,16 @@ from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import QApplication, QMainWindow
 
-from player.overlay import GreetingOverlay
-from player.playlist import advance, scan_playlist
+from datetime import datetime
 
-OVERLAY_AUTO_TRIGGER_MS = 10_000
+from player.debug_overlay import DebugCameraOverlay
+from player.greeting_queue import drain_greeting_queue
+from player.greeting_text import build_greeting
+from player.overlay import GreetingOverlay
+from player.playlist import active_video_folder, advance, next_after_rescan, scan_playlist
+
+GREETING_QUEUE_POLL_MS = 100
+DEBUG_CAMERA_POLL_MS = 100
 
 
 class _PlayerWindow(QMainWindow):
@@ -51,9 +58,13 @@ class _PlayerWindow(QMainWindow):
         self._on_close = on_close
         self._on_greeting_trigger = on_greeting_trigger
         self._overlay: GreetingOverlay | None = None
+        self._debug_overlay: DebugCameraOverlay | None = None
 
     def attach_overlay(self, overlay: GreetingOverlay) -> None:
         self._overlay = overlay
+
+    def attach_debug_overlay(self, overlay: DebugCameraOverlay) -> None:
+        self._debug_overlay = overlay
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Escape:
@@ -67,6 +78,8 @@ class _PlayerWindow(QMainWindow):
     def resizeEvent(self, event: QResizeEvent) -> None:
         if self._overlay is not None:
             self._overlay.reposition()
+        if self._debug_overlay is not None:
+            self._debug_overlay.reposition()
         super().resizeEvent(event)
 
     def closeEvent(self, event) -> None:
@@ -82,11 +95,21 @@ class Player:
         playlist: list[Path],
         font_size_factor: float = 0.08,
         display_duration_seconds: int = 5,
+        greeting_queue=None,
+        debug_camera_queue=None,
+        greeting_poll_interval_ms: int = GREETING_QUEUE_POLL_MS,
+        debug_camera_poll_interval_ms: int = DEBUG_CAMERA_POLL_MS,
+        video_folder: Path | None = None,
+        playlist_schedule: list[dict[str, Any]] | None = None,
+        holidays: dict[str, str] | None = None,
     ) -> None:
         if not playlist:
             raise ValueError("playlist must contain at least one video")
         self._playlist = playlist
         self._index = 0
+        self._video_folder = Path(video_folder) if video_folder is not None else None
+        self._playlist_schedule = list(playlist_schedule or [])
+        self._holidays = dict(holidays) if holidays else {}
 
         self.main_window = _PlayerWindow(
             on_close=self._shutdown,
@@ -104,6 +127,10 @@ class Player:
             hold_ms=display_duration_seconds * 1000,
         )
         self.main_window.attach_overlay(self.overlay)
+        self.debug_overlay: DebugCameraOverlay | None = None
+        if debug_camera_queue is not None:
+            self.debug_overlay = DebugCameraOverlay(self.main_window)
+            self.main_window.attach_debug_overlay(self.debug_overlay)
 
         self.audio_output = QAudioOutput()
         self.media_player = QMediaPlayer()
@@ -112,30 +139,71 @@ class Player:
         self.media_player.mediaStatusChanged.connect(self._on_media_status_changed)
 
         self._shutdown_done = False
-        self._auto_trigger_timer: QTimer | None = None
+        self._greeting_queue = greeting_queue
+        self._debug_camera_queue = debug_camera_queue
+        self._greeting_poll_interval_ms = greeting_poll_interval_ms
+        self._debug_camera_poll_interval_ms = debug_camera_poll_interval_ms
+        self._greeting_poll_timer: QTimer | None = None
+        self._debug_camera_poll_timer: QTimer | None = None
 
     def start(self) -> None:
         self.main_window.showFullScreen()
         # Snap overlay to the main window now that it has a real geometry.
         self.overlay.reposition()
         self._load_and_play(self._index)
-        # One-shot trigger 10s after startup so the overlay can be validated
-        # without a recognition worker. Story 2.4 will replace this with the
-        # multiprocessing queue poller.
-        self._auto_trigger_timer = QTimer(self.main_window)
-        self._auto_trigger_timer.setSingleShot(True)
-        self._auto_trigger_timer.timeout.connect(lambda: self.show_greeting("TEST GREETING"))
-        self._auto_trigger_timer.start(OVERLAY_AUTO_TRIGGER_MS)
+        if self._greeting_queue is not None:
+            self._greeting_poll_timer = QTimer(self.main_window)
+            self._greeting_poll_timer.timeout.connect(self._poll_greeting_queue)
+            self._greeting_poll_timer.start(self._greeting_poll_interval_ms)
+        if self._debug_camera_queue is not None and self.debug_overlay is not None:
+            self.debug_overlay.show()
+            self._debug_camera_poll_timer = QTimer(self.main_window)
+            self._debug_camera_poll_timer.timeout.connect(self._poll_debug_camera_queue)
+            self._debug_camera_poll_timer.start(self._debug_camera_poll_interval_ms)
 
-    def show_greeting(self, name: str) -> None:
+    def show_greeting(
+        self,
+        name: str,
+        flavors: list[str] | None = None,
+        language: str | None = None,
+        birthday: str | None = None,
+        custom_message: str | None = None,
+    ) -> None:
         """Fade a greeting overlay over the video.
 
-        Story 2.4 wires this from a multiprocessing.Queue poller — the
-        signature must stay ``(name: str) -> None``.
+        Story 2.4 wires this from a multiprocessing.Queue poller; Story 5.1
+        adds optional *flavors* from the queue event so the contextual
+        greeting builder can pick a personality line.
         """
-        display_text = f"Welcome, {name}!" if name and name != "TEST GREETING" else "TEST GREETING"
+        if not name or name == "TEST GREETING":
+            display_text = "TEST GREETING"
+        else:
+            display_text = build_greeting(
+                name,
+                now=datetime.now(),
+                holidays=self._holidays,
+                flavors=flavors or [],
+                language=language,
+                birthday=birthday,
+                custom_message=custom_message,
+            )
         self.overlay.reposition()
         self.overlay.start_fade(display_text)
+
+    def _poll_greeting_queue(self) -> None:
+        drain_greeting_queue(self._greeting_queue, self.show_greeting)
+
+    def _poll_debug_camera_queue(self) -> None:
+        if self._debug_camera_queue is None or self.debug_overlay is None:
+            return
+        latest = None
+        while True:
+            try:
+                latest = self._debug_camera_queue.get_nowait()
+            except queue.Empty:
+                break
+        if isinstance(latest, dict):
+            self.debug_overlay.update_event(latest)
 
     def _load_and_play(self, index: int) -> None:
         path = self._playlist[index]
@@ -144,7 +212,15 @@ class Player:
 
     def _on_media_status_changed(self, status: QMediaPlayer.MediaStatus) -> None:
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
-            self._index = advance(self._index, len(self._playlist))
+            if self._video_folder is not None:
+                current_path = self._playlist[self._index]
+                active_folder = active_video_folder(self._video_folder, self._playlist_schedule)
+                new_playlist = scan_playlist(active_folder)
+                self._playlist, self._index = next_after_rescan(
+                    current_path, self._index, new_playlist
+                )
+            else:
+                self._index = advance(self._index, len(self._playlist))
             self._load_and_play(self._index)
 
     def _shutdown(self) -> None:
@@ -155,21 +231,25 @@ class Player:
         self.media_player.setSource(QUrl())
         if self.overlay is not None:
             self.overlay.close()  # close the top-level overlay window too
+        if self.debug_overlay is not None:
+            self.debug_overlay.close()
         app = QApplication.instance()
         if app is not None:
             app.quit()
 
 
-def run_player(config: dict[str, Any]) -> int:
+def run_player(config: dict[str, Any], greeting_queue=None, debug_camera_queue=None) -> int:
     """Boot the Qt application and play the kiosk loop.
 
     Returns the Qt exit code so ``run.py`` can pass it to ``sys.exit``.
     """
     video_folder = Path(config.get("video_folder", "videos")).resolve()
-    playlist = scan_playlist(video_folder)
+    playlist_schedule = config.get("playlist_schedule") or []
+    active_folder = active_video_folder(video_folder, playlist_schedule).resolve()
+    playlist = scan_playlist(active_folder)
     if not playlist:
         print(
-            f"ERROR: no .mp4 files found in {video_folder}",
+            f"ERROR: no .mp4 files found in {active_folder}",
             file=sys.stderr,
         )
         return 1
@@ -179,6 +259,11 @@ def run_player(config: dict[str, Any]) -> int:
         playlist,
         font_size_factor=float(config.get("font_size_factor", 0.08)),
         display_duration_seconds=int(config.get("display_duration_seconds", 5)),
+        greeting_queue=greeting_queue,
+        debug_camera_queue=debug_camera_queue if config.get("debug_camera_overlay", False) else None,
+        video_folder=video_folder,
+        playlist_schedule=playlist_schedule,
+        holidays=config.get("holidays") or {},
     )
     player.start()
     # Keep a reference attached to the app so GC can't kill the pipeline.

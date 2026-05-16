@@ -7,6 +7,13 @@ numpy==2.4.4
 Pillow==12.2.0
 click==8.3.3
 PyQt6==6.11.0
-python-telegram-bot==22.7
+python-telegram-bot[job-queue]==22.7
 watchdog==6.0.0
 PyYAML==6.0.3
+filelock==3.29.0
+Flask==3.0.3
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+Werkzeug==3.1.8
+blinker==1.9.0
+itsdangerous==2.2.0

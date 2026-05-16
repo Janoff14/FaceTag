@@ -1,5 +1,5 @@
 # generated: 2026-05-15T17:50:29+05:00
-# last_updated: 2026-05-15T21:15:00+05:00
+# last_updated: 2026-05-16T00:55:00+05:00
 # project: facial recognition - uzc
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-15T17:50:29+05:00
-last_updated: 2026-05-15T21:15:00+05:00
+last_updated: 2026-05-16T12:00:00+05:00
 project: facial recognition - uzc
 project_key: NOKEY
 tracking_system: file-system
@@ -48,28 +48,36 @@ development_status:
   1-3-render-fullscreen-looping-promo-video-player: done
   1-4-validate-fade-in-out-greeting-overlay-over-promo-video: done
   epic-1-retrospective: optional
-  epic-2: backlog
-  2-1-build-single-frame-face-recognition-utility: backlog
-  2-2-implement-people-json-store-with-shared-atomic-writer-module: backlog
-  2-3-run-recognition-worker-as-separate-process-with-camera-capture: backlog
-  2-4-wire-greeting-queue-between-worker-and-player: backlog
-  2-5-add-per-person-greeting-cooldown: backlog
-  2-6-bootstrap-5-person-seed-set-verify-accuracy-under-demo-lighting: backlog
+  epic-2: in-progress
+  2-1-build-single-frame-face-recognition-utility: done
+  2-2-implement-people-json-store-with-shared-atomic-writer-module: done
+  2-3-run-recognition-worker-as-separate-process-with-camera-capture: done
+  2-4-wire-greeting-queue-between-worker-and-player: done
+  2-5-add-per-person-greeting-cooldown: done
+  2-6-bootstrap-5-person-seed-set-verify-accuracy-under-demo-lighting: review
   epic-2-retrospective: optional
-  epic-3: backlog
-  3-1-wire-supervisor-for-component-lifecycle-start-log-restart: backlog
-  3-2-bootstrap-telegram-bot-with-admin-allowlist: backlog
-  3-3-implement-add-person-via-telegram-bot: backlog
-  3-4-implement-list-people-and-delete-person: backlog
-  3-5-add-file-watcher-hot-reload-to-recognition-worker: backlog
-  3-6-implement-add-video-via-telegram-with-size-check: backlog
-  3-7-implement-list-videos-delete-video-and-player-playlist-rescan: backlog
+  epic-3: done
+  3-1-wire-supervisor-for-component-lifecycle-start-log-restart: done
+  3-2-bootstrap-telegram-bot-with-admin-allowlist: done
+  3-3-implement-add-person-via-telegram-bot: done
+  3-4-implement-list-people-and-delete-person: done
+  3-5-add-file-watcher-hot-reload-to-recognition-worker: done
+  3-6-implement-add-video-via-telegram-with-size-check: done
+  3-7-implement-list-videos-delete-video-and-player-playlist-rescan: done
   epic-3-retrospective: optional
-  epic-4: backlog
-  4-1-build-add-person-py-cli-fallback: backlog
-  4-2-build-add-video-py-cli-fallback: backlog
-  4-3-implement-benchmark-py-self-test-for-accuracy-latency-boundary: backlog
-  4-4-60-minute-stability-shakedown-on-the-demo-machine: backlog
-  4-5-author-readme-with-architecture-diagram-and-selection-strategy-notes: backlog
+  epic-4: in-progress
+  4-1-build-add-person-py-cli-fallback: done
+  4-2-build-add-video-py-cli-fallback: done
+  4-3-implement-benchmark-py-self-test-for-accuracy-latency-boundary: done
+  4-4-60-minute-stability-shakedown-on-the-demo-machine: ready-for-dev
+  4-5-author-readme-with-architecture-diagram-and-selection-strategy-notes: review
   4-6-record-1-3-minute-demo-video-covering-all-5-demo-scenes: backlog
   epic-4-retrospective: optional
+  epic-5: done
+  5-1-contextual-greeting-text-helpers: done
+  5-2-overlay-visual-polish: done
+  5-3-admin-web-ui-people: done
+  5-4-admin-web-ui-videos-and-supervisor-wiring: done
+  5-5-telegram-inline-keyboard-menus: done
+  5-6-telegram-recognition-notifications: done
+  epic-5-retrospective: optional

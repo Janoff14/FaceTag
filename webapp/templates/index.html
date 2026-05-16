@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="grid">
+
+  <section class="card" id="people-card">
+    <h2>
+      People
+      <span class="count">{{ people | length }}</span>
+    </h2>
+
+    {% if people %}
+      <ul class="list">
+        {% for person in people %}
+          <li>
+            {% if person.has_photo %}
+              <img class="face" src="{{ url_for('face_photo', safe_name=person.safe) }}" alt="">
+            {% else %}
+              <div class="placeholder">{{ person.initial }}</div>
+            {% endif %}
+            <div class="person-body">
+              <div class="person-title">
+                <span class="name">{{ person.name }}</span>
+                <span class="meta">{{ person.language|upper }}{% if person.birthday %} - {{ person.birthday }}{% endif %}</span>
+              </div>
+              {% if person.custom_message %}
+                <div class="person-meta"><span class="meta">{{ person.custom_message }}</span></div>
+              {% endif %}
+              <details class="metadata-editor">
+                <summary>Edit greeting</summary>
+                <form class="stack" method="post" action="{{ url_for('update_person_route') }}">
+                  <input type="hidden" name="name" value="{{ person.name }}">
+                  <select name="language">
+                    <option value="en" {% if person.language == 'en' %}selected{% endif %}>English</option>
+                    <option value="uz" {% if person.language == 'uz' %}selected{% endif %}>Uzbek</option>
+                    <option value="ru" {% if person.language == 'ru' %}selected{% endif %}>Russian</option>
+                  </select>
+                  <input type="text" name="birthday" value="{{ person.birthday }}" placeholder="Birthday MM-DD">
+                  <input type="text" name="custom_message" value="{{ person.custom_message }}" placeholder="Custom message">
+                  <textarea name="flavor" rows="2" placeholder="Optional rotating flavor lines">{{ person.flavor }}</textarea>
+                  <button type="submit">Save</button>
+                </form>
+              </details>
+            </div>
+            <form class="inline" method="post" action="{{ url_for('delete_person') }}"
+                  onsubmit="return confirm('Remove {{ person.name }}?');">
+              <input type="hidden" name="name" value="{{ person.name }}">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty">No people registered yet.</div>
+    {% endif %}
+
+    <form class="add" method="post" action="{{ url_for('add_person_route') }}"
+          enctype="multipart/form-data">
+      <label for="person-name">Add a person</label>
+      <div class="row">
+        <input id="person-name" type="text" name="name" placeholder="Name" required>
+        <input id="person-photo" type="file" name="photo" accept="image/*" required>
+      </div>
+      <div class="row">
+        <select name="language">
+          <option value="en">English</option>
+          <option value="uz">Uzbek</option>
+          <option value="ru">Russian</option>
+        </select>
+        <input type="text" name="birthday" placeholder="Birthday MM-DD">
+      </div>
+      <input type="text" name="custom_message" placeholder="Custom greeting message">
+      <textarea name="flavor" rows="2" placeholder="Optional rotating flavor lines, one per line"></textarea>
+      <button type="submit" class="primary">Add person</button>
+    </form>
+
+    <form class="add" method="post" action="{{ url_for('capture_person_route') }}">
+      <label for="capture-name">Capture from camera</label>
+      <div class="row">
+        <input id="capture-name" type="text" name="name" placeholder="Name" required>
+        <select name="language">
+          <option value="en">English</option>
+          <option value="uz">Uzbek</option>
+          <option value="ru">Russian</option>
+        </select>
+      </div>
+      <div class="row">
+        <input type="text" name="birthday" placeholder="Birthday MM-DD">
+        <input type="text" name="custom_message" placeholder="Custom greeting message">
+      </div>
+      <textarea name="flavor" rows="2" placeholder="Optional rotating flavor lines, one per line"></textarea>
+      <button type="submit">Capture and add</button>
+    </form>
+  </section>
+
+  <section class="card" id="videos-card">
+    <h2>
+      Videos
+      <span class="count">{{ videos | length }}</span>
+    </h2>
+
+    {% if videos %}
+      <ul class="list">
+        {% for video in videos %}
+          <li>
+            <div class="placeholder">Play</div>
+            <span class="filename"><strong>{{ video.name }}</strong></span>
+            <form class="inline" method="post" action="{{ url_for('delete_video_route') }}"
+                  onsubmit="return confirm('Remove {{ video.name }}?');">
+              <input type="hidden" name="filename" value="{{ video.name }}">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty">No videos in playlist.</div>
+    {% endif %}
+
+    <form class="add" method="post" action="{{ url_for('add_video_route') }}"
+          enctype="multipart/form-data">
+      <label for="video-file">Add a video (.mp4, .mov, .webm - any size)</label>
+      <input id="video-file" type="file" name="video" accept="video/mp4,video/quicktime,video/webm" required>
+      <button type="submit" class="primary">Upload video</button>
+    </form>
+  </section>
+
+</div>
+{% endblock %}
