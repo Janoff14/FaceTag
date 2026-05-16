@@ -312,34 +312,29 @@ class GreetingOverlay(QWidget):
         self._apply_font()
         self._layout_card()
 
-    def _anchor_is_foreground(self) -> bool:
-        """Return True only when the kiosk window is the right place to draw on."""
+    def _anchor_has_surface(self) -> bool:
+        """Return True when the kiosk window has a surface to draw on.
+
+        We deliberately do NOT require the anchor to be the *active* window —
+        the kiosk monitor should still display the greeting while the user
+        is interacting with another app (e.g. adding a person from the
+        webapp in a browser). Z-order naturally keeps the overlay behind
+        whatever app is in front of the kiosk window because the overlay
+        is parented to that window (no WindowStaysOnTopHint).
+        """
         if self._anchor is None:
             return False
-        if not self._anchor.isVisible() or self._anchor.isMinimized():
-            return False
-        # On Windows, isActiveWindow() catches focus loss to another app's
-        # window so the overlay never leaks over Word, Chrome, etc.
-        return self._anchor.isActiveWindow()
+        return self._anchor.isVisible() and not self._anchor.isMinimized()
 
     def eventFilter(self, watched, event):  # noqa: N802 - Qt API
-        """Mirror the anchor's window state so the overlay never escapes it."""
+        """Hide the overlay when the kiosk window has no surface to draw on."""
         if watched is self._anchor and event is not None:
             etype = event.type()
-            if etype in (
-                QEvent.Type.WindowStateChange,
-                QEvent.Type.WindowDeactivate,
-                QEvent.Type.Hide,
-            ):
-                if not self._anchor_is_foreground() and self.isVisible():
+            if etype in (QEvent.Type.WindowStateChange, QEvent.Type.Hide):
+                if not self._anchor_has_surface() and self.isVisible():
                     self._cancel_animation()
                     self.hide()
-            elif etype in (
-                QEvent.Type.WindowActivate,
-                QEvent.Type.Show,
-            ):
-                # Re-snap geometry when the kiosk regains focus; we don't
-                # auto-show the greeting again — it's a one-shot.
+            elif etype == QEvent.Type.Show:
                 self.reposition()
         return super().eventFilter(watched, event)
 
@@ -358,9 +353,11 @@ class GreetingOverlay(QWidget):
         eyebrow: Optional[str] = None,
     ) -> None:
         """Trigger a fade-in, hold, fade-out cycle with the greeting text."""
-        # Suppress entirely when the kiosk isn't the foreground app, so the
-        # greeting never gets painted over Chrome / Word / etc.
-        if not _is_offscreen_qt() and not self._anchor_is_foreground():
+        # Suppress only when the kiosk window has no surface (minimized /
+        # hidden). When another app is in front of the kiosk, the parented
+        # window flag means the OS naturally clips the overlay behind it,
+        # so it's safe to still paint on the kiosk monitor.
+        if not _is_offscreen_qt() and not self._anchor_has_surface():
             return
 
         title, detail = split_greeting_text(text)
