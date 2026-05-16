@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
+from win_job import KillOnCloseJob
+
 REPO_ROOT = Path(__file__).resolve().parent
 WORKER_JOIN_TIMEOUT_S = 5
 BOT_JOIN_TIMEOUT_S = 5
@@ -276,6 +278,21 @@ class ComponentSupervisor:
         self._thread: threading.Thread | None = None
         self._start_monitor_thread = start_monitor_thread
         self.requested_exit_code: int | None = None
+        # Children assigned to this job die with the supervisor on Windows,
+        # so the recognition worker can't orphan and hold the USB camera.
+        self._kill_job = KillOnCloseJob()
+        if self._kill_job.is_active:
+            append_supervisor_log(self.log_dir, "Kill-on-close job object active")
+
+    def _assign_pid(self, pid: int | None, label: str) -> None:
+        if pid is None or not self._kill_job.is_active:
+            return
+        ok = self._kill_job.assign(pid)
+        if not ok:
+            append_supervisor_log(
+                self.log_dir,
+                f"Could not assign {label} pid={pid} to job (continuing)",
+            )
 
     def start(self) -> None:
         append_supervisor_log(self.log_dir, "Supervisor starting")
@@ -285,14 +302,18 @@ class ComponentSupervisor:
             self.debug_camera_queue,
             log_dir=self.log_dir,
         )
+        self._assign_pid(self.worker.process.pid, "worker")
         self.player = start_player_process(
             self.config,
             self.greeting_queue,
             self.debug_camera_queue,
             log_dir=self.log_dir,
         )
+        self._assign_pid(self.player.process.pid, "player")
         self.bot = start_bot_process(self.log_dir)
+        self._assign_pid(self.bot.process.pid, "bot")
         self.webapp = start_webapp_process(self.log_dir)
+        self._assign_pid(self.webapp.process.pid, "webapp")
         if self._start_monitor_thread:
             self._thread = threading.Thread(target=self._monitor_loop, name="component-supervisor", daemon=True)
             self._thread.start()
@@ -314,6 +335,7 @@ class ComponentSupervisor:
                 self.debug_camera_queue,
                 log_dir=self.log_dir,
             )
+            self._assign_pid(self.player.process.pid, "player")
 
         if self.worker is not None and self.worker.process.exitcode is not None:
             exitcode = self.worker.process.exitcode
@@ -326,6 +348,7 @@ class ComponentSupervisor:
                 self.debug_camera_queue,
                 log_dir=self.log_dir,
             )
+            self._assign_pid(self.worker.process.pid, "worker")
 
         if self.bot is not None:
             returncode = self.bot.process.poll()
@@ -334,6 +357,7 @@ class ComponentSupervisor:
                 old_bot = self.bot
                 stop_bot_process(old_bot)
                 self.bot = start_bot_process(self.log_dir)
+                self._assign_pid(self.bot.process.pid, "bot")
 
         if self.webapp is not None:
             returncode = self.webapp.process.poll()
@@ -342,6 +366,7 @@ class ComponentSupervisor:
                 old_webapp = self.webapp
                 stop_webapp_process(old_webapp)
                 self.webapp = start_webapp_process(self.log_dir)
+                self._assign_pid(self.webapp.process.pid, "webapp")
 
     def _monitor_loop(self) -> None:
         while not self._stop.wait(MONITOR_INTERVAL_S):
